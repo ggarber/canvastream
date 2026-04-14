@@ -1,4 +1,12 @@
-# dependencies
+# Logs
+*.log
+**/*.log
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/.pnpm-debug.log*
+
+# Dependencies
 web/node_modules
 web/.pnp
 web/.pnp.*
@@ -8,39 +16,30 @@ web/.yarn/*
 !web/.yarn/releases
 !web/.yarn/versions
 
-# testing
+# Testing
 web/coverage
 
-# next.js
+# Next.js
 web/.next/
 web/out/
 
-# production
+# Production
 web/build
 
-# misc
+# Misc
 .DS_Store
 *.pem
-*.log
 
-# debug
-web/npm-debug.log*
-web/yarn-debug.log*
-web/yarn-error.log*
-web/.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
+# Env files
 .env*
 
-# vercel
+# Vercel
 web/.vercel
 
-# typescript
+# TypeScript
 web/*.tsbuildinfo
 web/next-env.d.ts
 
 # Go / Server
 server/canvastream-server
-server/*.log
 server/bin/
-
