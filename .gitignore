@@ -15,9 +15,12 @@ web/.yarn/*
 !web/.yarn/plugins
 !web/.yarn/releases
 !web/.yarn/versions
+server/vendor/
 
 # Testing
 web/coverage
+server/coverage.out
+server/profile.out
 
 # Next.js
 web/.next/
@@ -34,6 +37,8 @@ web/dist/
 .DS_Store
 *.pem
 Thumbs.db
+*.bak
+*~
 
 # Env files
 .env
@@ -57,3 +62,15 @@ server/bin/
 server/*.exe
 server/*.test
 server/*.prof
+server/*.out
+server/main
+# Binaries
+bin/
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
