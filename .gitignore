@@ -22,19 +22,30 @@ web/coverage
 # Next.js
 web/.next/
 web/out/
+web/.turbo/
+web/.cache/
 
 # Production
 web/build
+dist/
+web/dist/
 
 # Misc
 .DS_Store
 *.pem
+Thumbs.db
 
 # Env files
-.env*
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env*
 
 # Vercel
 web/.vercel
+.vercel
 
 # TypeScript
 web/*.tsbuildinfo
@@ -43,3 +54,6 @@ web/next-env.d.ts
 # Go / Server
 server/canvastream-server
 server/bin/
+server/*.exe
+server/*.test
+server/*.prof
