@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CanvaStream
+
+A high-performance real-time canvas streaming system using **WebCodecs API**, **WebSockets**, and **Go**.
+
+## Overview
+
+CanvaStream allows you to capture a `canvas` element in the browser, encode it to H.264 in real-time using native hardware acceleration (where available), and stream it to an RTMP destination through a lightweight Go proxy.
+
+## Architecture
+
+```mermaid
+graph LR
+    A[Browser Canvas] --> B[WebCodecs Encoder]
+    B --> C[WebSocket Client]
+    C -- Binary Chunks --> D[Go Proxy Server]
+    D -- RTMP Protocol --> E[RTMP Ingest / FFmpeg]
+```
+
+- **Frontend (Next.js)**: Uses `VideoEncoder` to compress canvas frames into H.264 NAL units.
+- **Protocol**: Custom binary framing: `[Type:1b] [Timestamp:4b BE] [Payload:Nb]`.
+- **Backend (Go)**: A high-concurrency WebSocket server that manages RTMP sessions and forwards packets without re-encoding.
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Go 1.25+**
+- **Node.js 20+**
+- **FFmpeg** (for testing)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Installation
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Clone the repository:
+   ```bash
+   git clone <repo-url>
+   cd canvastream
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2. Install frontend dependencies:
+   ```bash
+   cd web
+   npm install
+   ```
 
-## Learn More
+3. Initialize Go modules:
+   ```bash
+   cd ../server
+   go mod download
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+### Running Locally
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Start RTMP Listener (FFmpeg)**:
+   ```bash
+   ffmpeg -y -listen 1 -i rtmp://0.0.0.0:1935 -c copy -movflags +faststart /tmp/output.mp4
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+2. **Start Go Server**:
+   ```bash
+   cd server
+   go run .
+   ```
 
-## Deploy on Vercel
+3. **Start Web App**:
+   ```bash
+   cd web
+   npm run dev
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Open [http://localhost:3000](http://localhost:3000) to start streaming.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+MIT
