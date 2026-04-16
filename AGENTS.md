@@ -26,8 +26,10 @@ The `VideoEncoder` is configured with a **High profile (avc1.64001F)** at 720p 3
 - [x] Go WebSocket -> RTMP Proxy Implementation
 - [x] RTMP Destination Configuration (FFmpeg)
 - [x] Port 3003 Alignment & E2E Verification
+- [x] WSS/SSL Support for Server
 - [ ] Adaptive Bitrate Control (Planned)
 - [ ] Audio Stream Support (Planned)
+
 
 ## Maintenance & Testing
 

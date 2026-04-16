@@ -92,3 +92,14 @@ Communication for session management (chat, presence, and stream signaling) happ
   - Examples:
     - `{ "layout": "grid" }`
     - `{ "layout": "presentation" }`
+
+## Transport Security (WSS/SSL)
+
+The Go server can be configured to use SSL/TLS by providing the following environment variables:
+
+- `SSL_CERT_FILE`: Path to the SSL certificate file (e.g., `cert.pem`).
+- `SSL_KEY_FILE`: Path to the SSL private key file (e.g., `key.pem`).
+- `PORT` (Optional): The port on which the server listens (defaults to `3003`).
+
+If both `SSL_CERT_FILE` and `SSL_KEY_FILE` are set, the server will start in WSS/HTTPS mode. Otherwise, it will default to WS/HTTP.
+

@@ -101,7 +101,9 @@ export class StreamManager {
   ) {
     this.lastSeenVideoConfig = initialVideoConfig || null;
     this.lastSeenAudioConfig = initialAudioConfig || null;
-    const url = new URL(`ws://localhost:3003/stream/${sessionId}`);
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || `${protocol}//${window.location.hostname}:3003`;
+    const url = new URL(`${wsUrl}/stream/${sessionId}`);
     if (rtmpUrl) {
       url.searchParams.set("rtmp", rtmpUrl);
     }
