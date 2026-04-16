@@ -7,9 +7,8 @@ import Chat, { Message } from "@/components/Chat";
 import Debug from "@/components/Debug";
 import Guests from "@/components/Guests";
 import { LAYOUTS, Layout, Placeholder } from "@/types/layout";
-import { setupSharedVideoEncoder, setupSharedAudioEncoder } from "@/lib/encoding";
-import { StreamManager } from "@/lib/streaming";
-import { StreamingRecordManager } from "@/lib/recording";
+import { StreamManager, setupSharedVideoEncoder, setupSharedAudioEncoder } from "@/lib/streaming";
+import { RecordManager } from "@/lib/recording";
 import { StreamConnection, StreamConnectionStatus } from "@/lib/webrtc";
 import { AudioMixer } from "@/lib/audio";
 
@@ -29,7 +28,8 @@ export default function SessionPage() {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [stats, setStats] = useState({ recordedChunks: 0, streamedChunks: 0 });
-  const [pollCount, setPollCount] = useState(0);
+  const [streamingPollCount, setStreamingPollCount] = useState(0);
+  const [recordingPollCount, setRecordingPollCount] = useState(0);
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
   const [currentLayout, setCurrentLayout] = useState<Layout>(LAYOUTS[0]);
   const [assignedSlots, setAssignedSlots] = useState<{ source: string; placeholder: Placeholder }[]>([]);
@@ -73,13 +73,16 @@ export default function SessionPage() {
   const videoEncoderRef = useRef<VideoEncoder | null>(null);
   const audioEncoderRef = useRef<AudioEncoder | null>(null);
   const streamManagerRef = useRef<StreamManager | null>(null);
-  const recordManagerRef = useRef<StreamingRecordManager | null>(null);
+  const recordManagerRef = useRef<RecordManager | null>(null);
   const streamConnectionsRef = useRef<Record<string, StreamConnection>>({});
   const audioEncoderSetupRef = useRef<{ close: () => void, settings: any } | null>(null);
   const lastVideoConfigRef = useRef<ArrayBuffer | null>(null);
   const lastAudioConfigRef = useRef<ArrayBuffer | null>(null);
   const frameCountRef = useRef(0);
+  const lastEncodeTimeRef = useRef(0);
+  const lastKeyFrameTimeRef = useRef(0);
   const animationIdRef = useRef<number | null>(null);
+  const timerWorkerRef = useRef<Worker | null>(null);
   const streamStartTimeRef = useRef<number | null>(null);
   const audioMixerRef = useRef<AudioMixer | null>(null);
 
@@ -182,12 +185,38 @@ export default function SessionPage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const draw = () => {
-      const time = Date.now() / 1000;
-      const { width, height } = canvas;
+    const triggerEncode = () => {
+      if (!(isStreaming || isRecording) || !videoEncoderRef.current || !canvasRef.current) return;
+      
+      const now = performance.now();
+      
+      // Ensure canvas is up to date if we are in background OR if rAF didn't just run
+      // In background, rAF won't run at all, so we must render.
+      // If visible, rAF will render at 60fps+, and our 30fps encoder will pick up the latest state.
+      if (document.hidden) {
+          renderFrame();
+      }
 
+      const timestamp = now * 1000;
+      const frame = new VideoFrame(canvasRef.current, { timestamp });
+      
+      const forceKeyFrame = (now - lastKeyFrameTimeRef.current) >= 2000;
+      if (forceKeyFrame) {
+          lastKeyFrameTimeRef.current = now;
+      }
+      
+      if (videoEncoderRef.current.state === "configured") {
+          videoEncoderRef.current.encode(frame, { keyFrame: forceKeyFrame });
+      }
+      frame.close();
+      frameCountRef.current++;
+    };
+
+    const renderFrame = () => {
+      if (!ctx || !canvas) return;
+      
+      const { width, height } = canvas;
       const drawStaticBackground = (qx: number, qy: number, qw: number, qh: number) => {
-        // Main gradient: Deep, professional blue
         const gradient = ctx.createLinearGradient(qx, qy, qx + qw, qy + qh);
         gradient.addColorStop(0, "#001a3d"); 
         gradient.addColorStop(0.4, "#00428a"); 
@@ -196,7 +225,6 @@ export default function SessionPage() {
         ctx.fillStyle = gradient;
         ctx.fillRect(qx, qy, qw, qh);
 
-        // Bloom Glow 1: Top-right light blue highlight
         const bloom1 = ctx.createRadialGradient(
           qx + qw * 0.8, qy + qh * 0.2, 0,
           qx + qw * 0.8, qy + qh * 0.2, qw * 0.8
@@ -207,7 +235,6 @@ export default function SessionPage() {
         ctx.fillStyle = bloom1;
         ctx.fillRect(qx, qy, qw, qh);
 
-        // Bloom Glow 2: Bottom-left subtle purple/blue tint
         const bloom2 = ctx.createRadialGradient(
           qx + qw * 0.2, qy + qh * 0.9, 0,
           qx + qw * 0.2, qy + qh * 0.9, qw * 0.6
@@ -217,7 +244,6 @@ export default function SessionPage() {
         ctx.fillStyle = bloom2;
         ctx.fillRect(qx, qy, qw, qh);
 
-        // Subtle noise/grain texture (optional, but premium)
         ctx.globalCompositeOperation = "overlay";
         ctx.fillStyle = "rgba(255, 255, 255, 0.01)";
         for (let i = 0; i < 50; i++) {
@@ -226,7 +252,6 @@ export default function SessionPage() {
         ctx.globalCompositeOperation = "source-over";
       };
       
-      // 1. Draw Background (Cover style) or Base Animation
       if (bgImage) {
         const srt = bgImage.width / bgImage.height;
         const drt = width / height;
@@ -244,11 +269,9 @@ export default function SessionPage() {
         }
         ctx.drawImage(bgImage, sx, sy, sw, sh, 0, 0, width, height);
       } else {
-        // Draw static background if no background image
         drawStaticBackground(0, 0, width, height);
       }
 
-      // 2. Draw Layout Placeholders
       currentLayout.placeholders.forEach((placeholder) => {
         const { x, y, width: qw, height: qh, rounded } = placeholder;
         const assignment = assignedSlots.find(a => a.placeholder === placeholder);
@@ -295,7 +318,6 @@ export default function SessionPage() {
             }
             ctx.drawImage(el, sx, sy, sw, sh, x, y, qw, qh);
           } else {
-            // contain
             let dw, dh, dx, dy;
             if (imgRatio > targetRatio) {
               dw = qw;
@@ -318,13 +340,10 @@ export default function SessionPage() {
         } else if (source === "screen" && isScreenSharing && screenVideoRef.current && screenVideoRef.current.readyState >= 2) {
           drawWithStyle(screenVideoRef.current, "contain");
         } else if (source && remoteVideosRef.current[source] && remoteVideosRef.current[source].readyState >= 2) {
-          // Check if it's a remote stream or remote screen
           const streamInfo = streams[source];
           drawWithStyle(remoteVideosRef.current[source], streamInfo?.source === "display" ? "contain" : "cover");
         } else if (source === "animation") {
-          // Skip drawing per-quadrant background, as it's already drawn for the whole canvas
         } else if (currentLayout.id !== "presentation" && (placeholder.tags.includes("camera") || placeholder.tags.includes("remote"))) {
-          // Draw a placeholder box for small video slots if empty, but only if not in presentation layout
           ctx.save();
           if (rounded) {
             ctx.beginPath();
@@ -336,25 +355,35 @@ export default function SessionPage() {
           ctx.restore();
         }
       });
+    };
 
-      // 3. Encoding & Streaming
-      if ((isStreaming || isRecording) && videoEncoderRef.current && canvasRef.current) {
-        const timestamp = performance.now() * 1000;
-        const frame = new VideoFrame(canvasRef.current, { timestamp });
-        const keyFrame = frameCountRef.current % 30 === 0;
-        if (videoEncoderRef.current.state === "configured") {
-            videoEncoderRef.current.encode(frame, { keyFrame });
-        }
-        frame.close();
-        frameCountRef.current++;
-      }
-
+    const draw = () => {
+      renderFrame();
       animationIdRef.current = requestAnimationFrame(draw);
     };
 
     animationIdRef.current = requestAnimationFrame(draw);
+    
+    // Background-safe encoding timer via Web Worker
+    if (isStreaming || isRecording) {
+        if (!timerWorkerRef.current) {
+            timerWorkerRef.current = new Worker(new URL('../../../lib/timer-worker.ts', import.meta.url));
+        }
+        timerWorkerRef.current.onmessage = (e) => {
+            if (e.data.type === 'tick') {
+                triggerEncode();
+            }
+        };
+        timerWorkerRef.current.postMessage({ type: 'start', interval: 33 });
+    }
+
     return () => {
       if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
+      if (timerWorkerRef.current) {
+          timerWorkerRef.current.postMessage({ type: 'stop' });
+          timerWorkerRef.current.terminate();
+          timerWorkerRef.current = null;
+      }
     };
   }, [isStreaming, isRecording, isCameraActive, isScreenSharing, assignedSlots, currentLayout, bgImage]);
 
@@ -535,6 +564,7 @@ export default function SessionPage() {
 
     if (!videoEncoderRef.current) {
       videoEncoderRef.current = setupSharedVideoEncoder(handleVideoChunk);
+      frameCountRef.current = 0; // Reset frame count to force immediate keyframe
     }
     
     if (getAudioMixer().getMixedStream() && !audioEncoderSetupRef.current) {
@@ -555,6 +585,8 @@ export default function SessionPage() {
         setIsStreaming(true);
         setIsConnecting(false);
         setStreamingError(null);
+        frameCountRef.current = 0; // Force immediate keyframe for new stream
+        lastKeyFrameTimeRef.current = 0;
         startEncodersIfNeeded();
       },
       (msg) => {
@@ -956,12 +988,17 @@ export default function SessionPage() {
     }
   }, []);
 
-  const stopStreaming = () => {
+  const stopStreaming = async () => {
     setIsStreaming(false);
     setIsConnecting(false);
     if (streamManagerRef.current) {
       streamManagerRef.current.stop();
       streamManagerRef.current = null;
+    }
+    if (videoEncoderRef.current && videoEncoderRef.current.state === "configured") {
+      try {
+        await videoEncoderRef.current.flush();
+      } catch (e) {}
     }
   };
 
@@ -983,7 +1020,7 @@ export default function SessionPage() {
     }
 
     const combinedStream = new MediaStream(tracks);
-    const rm = new StreamingRecordManager(combinedStream);
+    const rm = new RecordManager(combinedStream);
     
     try {
       // Accessing the file system requires a user gesture, which we have here from the button click
@@ -1077,6 +1114,7 @@ export default function SessionPage() {
         audioEncoderSetupRef.current = null;
       }
       frameCountRef.current = 0;
+      lastKeyFrameTimeRef.current = 0;
     }
   }, [isStreaming, isRecording]);
   
@@ -1084,7 +1122,8 @@ export default function SessionPage() {
   useEffect(() => {
     if (!isStreaming && !isRecording) {
       setStats({ recordedChunks: 0, streamedChunks: 0 });
-      setPollCount(0);
+      setStreamingPollCount(0);
+      setRecordingPollCount(0);
       return;
     }
 
@@ -1093,7 +1132,8 @@ export default function SessionPage() {
         recordedChunks: recordManagerRef.current?.getStats().chunks ?? 0,
         streamedChunks: streamManagerRef.current?.getStats().chunks ?? 0
       });
-      setPollCount(prev => prev + 1);
+      setStreamingPollCount(prev => isStreaming ? prev + 1 : 0);
+      setRecordingPollCount(prev => isRecording ? prev + 1 : 0);
     };
 
     const interval = setInterval(updateStats, 5000);
@@ -1124,13 +1164,13 @@ export default function SessionPage() {
         </div>
       )}
 
-      {pollCount > 0 && ((isStreaming && stats.streamedChunks === 0) || (isRecording && stats.recordedChunks === 0)) && (
+      {((isStreaming && streamingPollCount >= 6 && stats.streamedChunks === 0) || (isRecording && recordingPollCount >= 6 && stats.recordedChunks === 0)) && (
         <div className="fixed top-0 left-0 right-0 z-[200] bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-3 font-bold animate-in slide-in-from-top duration-300">
           <div className="bg-white/20 p-1.5 rounded-full">
             <Settings2 size={16} className="animate-pulse" />
           </div>
           <p>
-            Warning: {isStreaming && stats.streamedChunks === 0 ? "Streaming" : ""}{isStreaming && stats.streamedChunks === 0 && isRecording && stats.recordedChunks === 0 ? " and " : ""}{isRecording && stats.recordedChunks === 0 ? "Recording" : ""} could be not working (0 chunks processed).
+            Warning: {isStreaming && streamingPollCount >= 6 && stats.streamedChunks === 0 ? "Streaming" : ""}{isStreaming && streamingPollCount >= 6 && stats.streamedChunks === 0 && isRecording && recordingPollCount >= 6 && stats.recordedChunks === 0 ? " and " : ""}{isRecording && recordingPollCount >= 6 && stats.recordedChunks === 0 ? "Recording" : ""} could be not working (0 chunks processed).
           </p>
         </div>
       )}
@@ -1279,7 +1319,7 @@ export default function SessionPage() {
             </div>
 
           {/* Toolbar */}
-          <div className="mt-8 flex items-center gap-3 bg-gray-100 border border-gray-200 p-2 rounded-2xl shrink-0">
+          <div className="mt-8 flex items-center gap-3 bg-gray-100 border border-gray-200 p-2 rounded-2xl shrink-0 relative z-20">
               <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
               <button 
                   onClick={toggleCamera}
@@ -1383,7 +1423,7 @@ export default function SessionPage() {
               <button 
                   onClick={() => setIsInviteOpen(true)}
                   title="Invite others to join this session"
-                  className="p-4 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-500 transition-all cursor-pointer relative"
+                  className="p-4 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-500 transition-all cursor-pointer"
               >
                   <Users size={24} />
               </button>

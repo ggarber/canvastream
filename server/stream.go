@@ -78,7 +78,10 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		ws.WriteJSON(map[string]string{"type": "error", "message": "Failed to connect to RTMP server. Is it running?"})
 		return
 	}
-	defer client.Close()
+	defer func() {
+		client.Close()
+		log.Printf("[%s] RTMP client connection closed\n", sessionId)
+	}()
 
 	if err := client.Connect(&rtmpmsg.NetConnectionConnect{
 		Command: rtmpmsg.NetConnectionConnectCommand{
@@ -97,7 +100,10 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		ws.WriteJSON(map[string]string{"type": "error", "message": "Failed to create RTMP stream"})
 		return
 	}
-	defer stream.Close()
+	defer func() {
+		stream.Close()
+		log.Printf("[%s] RTMP stream closed\n", sessionId)
+	}()
 
 	if err := stream.Publish(&rtmpmsg.NetStreamPublish{
 		PublishingName: streamName, 
@@ -114,6 +120,10 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 	// Stats tracking
 	var audioCount int64
 	var videoCount int64
+	var lastAudioLogCount int64
+	var lastVideoLogCount int64
+	var lastTickerAudioCount int64
+	var lastTickerVideoCount int64
 
 	// Periodic logging ticker
 	ticker := time.NewTicker(1 * time.Minute)
@@ -124,7 +134,11 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 			case <-ticker.C:
 				vc := atomic.LoadInt64(&videoCount)
 				ac := atomic.LoadInt64(&audioCount)
-				log.Printf("[%s] Stream Stats: Records Received - Video: %d, Audio: %d\n", sessionId, vc, ac)
+				vDiff := vc - lastTickerVideoCount
+				aDiff := ac - lastTickerAudioCount
+				log.Printf("[%s] Stream Stats: Records Received - Video: %d (+%d), Audio: %d (+%d)\n", sessionId, vc, vDiff, ac, aDiff)
+				lastTickerVideoCount = vc
+				lastTickerAudioCount = ac
 				
 				streamsMu.Lock()
 				if info, ok := streams[streamID]; ok {
@@ -171,18 +185,20 @@ func handleStream(w http.ResponseWriter, r *http.Request) {
 		var csid uint32
 		var rtmpMsg rtmpmsg.Message
 		if msgType == 9 {
-			atomic.AddInt64(&videoCount, 1)
-			if videoCount < 20 || videoCount%500 == 0 {
-				log.Printf("[%s] Received Video: size=%d, ts=%d, raw=%x\n", sessionId, len(payload), timestamp, message[1:5])
+			vCount := atomic.AddInt64(&videoCount, 1)
+			if vCount <= 20 || vCount%500 == 0 {
+				log.Printf("[%s] Received Video: packets=%d, size=%d, ts=%d, raw=%x\n", sessionId, vCount-lastVideoLogCount, len(payload), timestamp, message[1:5])
+				lastVideoLogCount = vCount
 			}
 			rtmpMsg = &rtmpmsg.VideoMessage{
 				Payload: bytes.NewReader(payload),
 			}
 			csid = 5
 		} else if msgType == 8 {
-			atomic.AddInt64(&audioCount, 1)
-			if audioCount < 20 || audioCount%500 == 0 {
-				log.Printf("[%s] Received Audio: size=%d, ts=%d, raw=%x\n", sessionId, len(payload), timestamp, message[1:5])
+			aCount := atomic.AddInt64(&audioCount, 1)
+			if aCount <= 20 || aCount%500 == 0 {
+				log.Printf("[%s] Received Audio: packets=%d, size=%d, ts=%d, raw=%x\n", sessionId, aCount-lastAudioLogCount, len(payload), timestamp, message[1:5])
+				lastAudioLogCount = aCount
 			}
 			rtmpMsg = &rtmpmsg.AudioMessage{
 				Payload: bytes.NewReader(payload),

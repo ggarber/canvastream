@@ -17,7 +17,7 @@ A minimal 5-byte header was chosen for WebSocket transmission to avoid JSON over
 The Go server uses the `go-rtmp` library to act as an RTMP client. It drapes incoming binary packets into RTMP Message containers (`VideoMessage` / `AudioMessage`) to avoid expensive re-encoding (transmuxing only).
 
 ### 3. WebCodecs Configuration
-The `VideoEncoder` in `page.tsx` is configured with a **Baseline profile (avc1.42E01F)** to ensure maximum compatibility across browsers and low-latency encoding.
+The `VideoEncoder` is configured with a **High profile (avc1.64001F)** at 720p 30fps and 3000 kbps (CBR) to provide a high-quality stream for the RTMP destination.
 
 ## Implementation Roadmap
 
