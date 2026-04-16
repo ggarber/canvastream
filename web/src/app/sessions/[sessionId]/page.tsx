@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { User, StopCircle, PlayCircle, Monitor, Image as ImageIcon, Layout as LayoutIcon, LayoutGrid, Presentation, Check, ChevronDown, Users, Copy, X, Link as LinkIcon, Circle, MessageSquare, Settings2, ChevronLeft, ChevronRight, Pencil, Mic, MicOff, Video, VideoOff, AlertCircle } from "lucide-react";
+import { StopCircle, PlayCircle, Monitor, Image as ImageIcon, Layout as LayoutIcon, LayoutGrid, Presentation, Check, ChevronDown, Users, Copy, X, Link as LinkIcon, Circle, MessageSquare, Settings2, ChevronLeft, ChevronRight, Pencil, Mic, MicOff, Video, VideoOff, AlertCircle } from "lucide-react";
 import { useParams } from "next/navigation";
 import Chat, { Message } from "@/components/Chat";
 import Debug from "@/components/Debug";
@@ -9,12 +9,12 @@ import Guests from "@/components/Guests";
 import { LAYOUTS, Layout, Placeholder } from "@/types/layout";
 import { StreamManager, setupSharedVideoEncoder, setupSharedAudioEncoder } from "@/lib/streaming";
 import { RecordManager } from "@/lib/recording";
-import { StreamConnection, StreamConnectionStatus } from "@/lib/webrtc";
+import { StreamConnection, StreamConnectionStatus, getIceConfig } from "@/lib/webrtc";
 import { AudioMixer } from "@/lib/audio";
 
 const COOL_NAMES = [
-  "Neon Phoenix", "Turbo Shadow", "Cyber Wolf", "Quantum Pulse", 
-  "Solar Flare", "Static Void", "Arctic Byte", "Cobalt Storm", 
+  "Neon Phoenix", "Turbo Shadow", "Cyber Wolf", "Quantum Pulse",
+  "Solar Flare", "Static Void", "Arctic Byte", "Cobalt Storm",
   "Digital Ghost", "Echo Spark", "Midnight Rider", "Lunar Blade",
   "Prism Ray", "Obsidian Core", "Vortex Shadow"
 ];
@@ -92,7 +92,7 @@ export default function SessionPage() {
     }
     return audioMixerRef.current;
   }, []);
-  
+
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const screenVideoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -115,10 +115,10 @@ export default function SessionPage() {
   const handleInteractionRetry = useCallback(async () => {
     setShowInteractionModal(false);
     getAudioMixer().resume();
-    
+
     const elements = [...interactionRequiredElements.current];
     interactionRequiredElements.current = [];
-    
+
     for (const el of elements) {
       try {
         await el.play();
@@ -131,11 +131,11 @@ export default function SessionPage() {
   // Map sources to layout placeholders
   useEffect(() => {
     const activeSources: { type: string; id: string }[] = [];
-    
+
     // Local sources
     if (isScreenSharing) activeSources.push({ type: "screen", id: "screen" });
     if (isCameraActive) activeSources.push({ type: "camera", id: "camera" });
-    
+
     // Remote sources
     Object.values(streams).forEach(stream => {
       if (stream.from !== myClientId) {
@@ -146,7 +146,7 @@ export default function SessionPage() {
         }
       }
     });
-    
+
     const assignments: { source: string; placeholder: Placeholder }[] = [];
     const usedSourceIds = new Set<string>();
 
@@ -187,26 +187,26 @@ export default function SessionPage() {
 
     const triggerEncode = () => {
       if (!(isStreaming || isRecording) || !videoEncoderRef.current || !canvasRef.current) return;
-      
+
       const now = performance.now();
-      
+
       // Ensure canvas is up to date if we are in background OR if rAF didn't just run
       // In background, rAF won't run at all, so we must render.
       // If visible, rAF will render at 60fps+, and our 30fps encoder will pick up the latest state.
       if (document.hidden) {
-          renderFrame();
+        renderFrame();
       }
 
       const timestamp = now * 1000;
       const frame = new VideoFrame(canvasRef.current, { timestamp });
-      
+
       const forceKeyFrame = (now - lastKeyFrameTimeRef.current) >= 2000;
       if (forceKeyFrame) {
-          lastKeyFrameTimeRef.current = now;
+        lastKeyFrameTimeRef.current = now;
       }
-      
+
       if (videoEncoderRef.current.state === "configured") {
-          videoEncoderRef.current.encode(frame, { keyFrame: forceKeyFrame });
+        videoEncoderRef.current.encode(frame, { keyFrame: forceKeyFrame });
       }
       frame.close();
       frameCountRef.current++;
@@ -214,14 +214,14 @@ export default function SessionPage() {
 
     const renderFrame = () => {
       if (!ctx || !canvas) return;
-      
+
       const { width, height } = canvas;
       const drawStaticBackground = (qx: number, qy: number, qw: number, qh: number) => {
         const gradient = ctx.createLinearGradient(qx, qy, qx + qw, qy + qh);
-        gradient.addColorStop(0, "#001a3d"); 
-        gradient.addColorStop(0.4, "#00428a"); 
-        gradient.addColorStop(0.7, "#0060ad"); 
-        gradient.addColorStop(1, "#001a3d"); 
+        gradient.addColorStop(0, "#001a3d");
+        gradient.addColorStop(0.4, "#00428a");
+        gradient.addColorStop(0.7, "#0060ad");
+        gradient.addColorStop(1, "#001a3d");
         ctx.fillStyle = gradient;
         ctx.fillRect(qx, qy, qw, qh);
 
@@ -251,7 +251,7 @@ export default function SessionPage() {
         }
         ctx.globalCompositeOperation = "source-over";
       };
-      
+
       if (bgImage) {
         const srt = bgImage.width / bgImage.height;
         const drt = width / height;
@@ -363,26 +363,26 @@ export default function SessionPage() {
     };
 
     animationIdRef.current = requestAnimationFrame(draw);
-    
+
     // Background-safe encoding timer via Web Worker
     if (isStreaming || isRecording) {
-        if (!timerWorkerRef.current) {
-            timerWorkerRef.current = new Worker(new URL('../../../lib/timer-worker.ts', import.meta.url));
+      if (!timerWorkerRef.current) {
+        timerWorkerRef.current = new Worker(new URL('../../../lib/timer-worker.ts', import.meta.url));
+      }
+      timerWorkerRef.current.onmessage = (e) => {
+        if (e.data.type === 'tick') {
+          triggerEncode();
         }
-        timerWorkerRef.current.onmessage = (e) => {
-            if (e.data.type === 'tick') {
-                triggerEncode();
-            }
-        };
-        timerWorkerRef.current.postMessage({ type: 'start', interval: 33 });
+      };
+      timerWorkerRef.current.postMessage({ type: 'start', interval: 33 });
     }
 
     return () => {
       if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
       if (timerWorkerRef.current) {
-          timerWorkerRef.current.postMessage({ type: 'stop' });
-          timerWorkerRef.current.terminate();
-          timerWorkerRef.current = null;
+        timerWorkerRef.current.postMessage({ type: 'stop' });
+        timerWorkerRef.current.terminate();
+        timerWorkerRef.current = null;
       }
     };
   }, [isStreaming, isRecording, isCameraActive, isScreenSharing, assignedSlots, currentLayout, bgImage]);
@@ -457,7 +457,7 @@ export default function SessionPage() {
           }));
         }
         if (isStreaming || isRecording) {
-            startEncodersIfNeeded();
+          startEncodersIfNeeded();
         }
       } catch (err) {
         console.error("Failed to get user media", err);
@@ -566,7 +566,7 @@ export default function SessionPage() {
       videoEncoderRef.current = setupSharedVideoEncoder(handleVideoChunk);
       frameCountRef.current = 0; // Reset frame count to force immediate keyframe
     }
-    
+
     if (getAudioMixer().getMixedStream() && !audioEncoderSetupRef.current) {
       audioEncoderSetupRef.current = setupSharedAudioEncoder(getAudioMixer().getMixedStream(), handleAudioChunk);
     }
@@ -629,14 +629,16 @@ export default function SessionPage() {
       }
 
       console.log(`Connecting to session... (Attempt ${reconnectCount + 1})`);
-      const sessionWs = new WebSocket(`ws://localhost:3003/session/${sessionId}`);
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || `${protocol}//${window.location.hostname}:3003`;
+      const sessionWs = new WebSocket(`${wsUrl}/session/${sessionId}`);
       sessionSocketRef.current = sessionWs;
       setSessionStatus('connecting');
 
       const resetMessageTimeout = () => {
         if (messageTimeout) clearTimeout(messageTimeout);
         messageTimeout = setTimeout(() => {
-          console.warn(`No message received for ${INACTIVITY_TIMEOUT/1000}s, disconnecting and reconnecting...`);
+          console.warn(`No message received for ${INACTIVITY_TIMEOUT / 1000}s, disconnecting and reconnecting...`);
           if (sessionWs.readyState === WebSocket.OPEN) {
             sessionWs.close();
           }
@@ -647,14 +649,14 @@ export default function SessionPage() {
         console.log(`Session connected: ${sessionId} as ${name}`);
         setSessionStatus('connected');
         const requestId = "init-" + Math.random().toString(36).substr(2, 9);
-        sessionWs.send(JSON.stringify({ 
-          type: "connect", 
+        sessionWs.send(JSON.stringify({
+          type: "connect",
           requestId,
-          name: name 
+          name: name
         }));
         reconnectCount = 0; // Reset count on successful connection
         resetMessageTimeout();
-        
+
         heartbeatInterval = setInterval(() => {
           if (sessionWs.readyState === WebSocket.OPEN) {
             sessionWs.send(JSON.stringify({ type: "heartbeat" }));
@@ -756,60 +758,67 @@ export default function SessionPage() {
               ...prev,
               [stream.streamId]: stream
             }));
-            
+
             console.log(`[Signaling] Comparing stream.from (${stream.from}) with myClientIdRef.current (${myClientIdRef.current})`);
-            
+
             // If it's my stream, store the ID
             if (stream.from === myClientIdRef.current) {
-                console.log(`[Signaling] Received our own stream ${stream.streamId}, skipping WebRTC initiation`);
-                if (stream.source === "camera") cameraStreamIdRef.current = stream.streamId;
-                if (stream.source === "display") screenStreamIdRef.current = stream.streamId;
+              console.log(`[Signaling] Received our own stream ${stream.streamId}, skipping WebRTC initiation`);
+              if (stream.source === "camera") cameraStreamIdRef.current = stream.streamId;
+              if (stream.source === "display") screenStreamIdRef.current = stream.streamId;
             } else {
               // We are the receiver, initiate connection
               const key = `${stream.from}||${stream.streamId}`;
               if (!streamConnectionsRef.current[key]) {
-                const conn = new StreamConnection(
-                  stream.streamId,
-                  stream.from,
-                  true,
-                  (status) => {
-                    setStreamConnectionsStatus(prev => ({ ...prev, [key]: status }));
-                  },
-                  (track, remoteStream) => {
-                    console.log(`[WebRTC] Received remote track for ${stream.streamId} from ${stream.from}`);
-                    if (!remoteVideosRef.current[stream.streamId]) {
-                      const video = document.createElement('video');
-                      video.autoplay = true;
-                      video.playsInline = true;
-                      video.srcObject = remoteStream;
-                      // We don't need to add it to the DOM, but we need it to play
-                      video.onloadedmetadata = () => {
-                        video.play().catch(e => {
-                          if (e.name === 'NotAllowedError') {
-                            setShowInteractionModal(true);
-                            if (!interactionRequiredElements.current.includes(video)) {
-                              interactionRequiredElements.current.push(video);
+                console.log(`[Signaling] Fetching ICE config for stream ${stream.streamId}`);
+                getIceConfig(sessionId).then(iceConfig => {
+                  // Double check if connection was created while fetching config
+                  if (streamConnectionsRef.current[key]) return;
+
+                  const conn = new StreamConnection(
+                    stream.streamId,
+                    stream.from,
+                    true,
+                    (status) => {
+                      setStreamConnectionsStatus(prev => ({ ...prev, [key]: status }));
+                    },
+                    (track, remoteStream) => {
+                      console.log(`[WebRTC] Received remote track for ${stream.streamId} from ${stream.from}`);
+                      if (!remoteVideosRef.current[stream.streamId]) {
+                        const video = document.createElement('video');
+                        video.autoplay = true;
+                        video.playsInline = true;
+                        video.srcObject = remoteStream;
+                        // We don't need to add it to the DOM, but we need it to play
+                        video.onloadedmetadata = () => {
+                          video.play().catch(e => {
+                            if (e.name === 'NotAllowedError') {
+                              setShowInteractionModal(true);
+                              if (!interactionRequiredElements.current.includes(video)) {
+                                interactionRequiredElements.current.push(video);
+                              }
                             }
-                          }
-                        });
-                      };
-                      remoteVideosRef.current[stream.streamId] = video;
-                    }
-                    setRemoteStreams(prev => ({ ...prev, [stream.streamId]: remoteStream }));
-                    getAudioMixer().addStream(stream.streamId, remoteStream);
-                  }
-                );
-                console.log(`[Signaling] Initiating connection for stream ${stream.streamId} from ${stream.from}`);
-                streamConnectionsRef.current[key] = conn;
-                conn.createOffer().then(offer => {
-                  console.log(`[Signaling] Sending OFFER to ${stream.from} for stream ${stream.streamId}`);
-                  sessionWs.send(JSON.stringify({
-                    type: "OFFER",
-                    to: stream.from,
-                    data: { streamId: stream.streamId, sdp: offer }
-                  }));
-                }).catch(err => {
-                  console.error(`[Signaling] Failed to create OFFER for ${stream.streamId}:`, err);
+                          });
+                        };
+                        remoteVideosRef.current[stream.streamId] = video;
+                      }
+                      setRemoteStreams(prev => ({ ...prev, [stream.streamId]: remoteStream }));
+                      getAudioMixer().addStream(stream.streamId, remoteStream);
+                    },
+                    iceConfig
+                  );
+                  console.log(`[Signaling] Initiating connection for stream ${stream.streamId} from ${stream.from}`);
+                  streamConnectionsRef.current[key] = conn;
+                  conn.createOffer().then(offer => {
+                    console.log(`[Signaling] Sending OFFER to ${stream.from} for stream ${stream.streamId}`);
+                    sessionWs.send(JSON.stringify({
+                      type: "OFFER",
+                      to: stream.from,
+                      data: { streamId: stream.streamId, sdp: offer }
+                    }));
+                  }).catch(err => {
+                    console.error(`[Signaling] Failed to create OFFER for ${stream.streamId}:`, err);
+                  });
                 });
               } else {
                 console.log(`[Signaling] Connection already exists for stream ${stream.streamId}`);
@@ -817,9 +826,9 @@ export default function SessionPage() {
             }
           } else if (msg.type === "response") {
             if (msg.data?.status === "connected") {
-                console.log(`[Signaling] Registered with connectionId: ${msg.data.connectionId}`);
-                myClientIdRef.current = msg.data.connectionId;
-                setMyClientId(msg.data.connectionId);
+              console.log(`[Signaling] Registered with connectionId: ${msg.data.connectionId}`);
+              myClientIdRef.current = msg.data.connectionId;
+              setMyClientId(msg.data.connectionId);
             }
             // For CREATE_STREAM/DESTROY_STREAM responses, we rely on the broadcast for state
           } else if (msg.type === "SESSION_STATE") {
@@ -839,59 +848,65 @@ export default function SessionPage() {
             const from = msg.from;
             const key = `${from}||${streamId}`;
             console.log(`OFFER received from ${from} for stream ${streamId}`);
-            
+
             if (!streamConnectionsRef.current[key]) {
-              const conn = new StreamConnection(
-                streamId,
-                from,
-                false,
-                (status) => {
-                  setStreamConnectionsStatus(prev => ({ ...prev, [key]: status }));
-                },
-                (track, remoteStream) => {
-                  console.log(`[WebRTC] Received remote track for ${streamId} from ${from}`);
-                  if (!remoteVideosRef.current[streamId]) {
-                    const video = document.createElement('video');
-                    video.autoplay = true;
-                    video.playsInline = true;
-                    video.srcObject = remoteStream;
-                    video.onloadedmetadata = () => {
-                      video.play().catch(e => {
-                        if (e.name === 'NotAllowedError') {
-                          setShowInteractionModal(true);
-                          if (!interactionRequiredElements.current.includes(video)) {
-                            interactionRequiredElements.current.push(video);
+              console.log(`[Signaling] Fetching ICE config for incoming OFFER from ${from}`);
+              getIceConfig(sessionId).then(iceConfig => {
+                if (streamConnectionsRef.current[key]) return;
+
+                const conn = new StreamConnection(
+                  streamId,
+                  from,
+                  false,
+                  (status) => {
+                    setStreamConnectionsStatus(prev => ({ ...prev, [key]: status }));
+                  },
+                  (track, remoteStream) => {
+                    console.log(`[WebRTC] Received remote track for ${streamId} from ${from}`);
+                    if (!remoteVideosRef.current[streamId]) {
+                      const video = document.createElement('video');
+                      video.autoplay = true;
+                      video.playsInline = true;
+                      video.srcObject = remoteStream;
+                      video.onloadedmetadata = () => {
+                        video.play().catch(e => {
+                          if (e.name === 'NotAllowedError') {
+                            setShowInteractionModal(true);
+                            if (!interactionRequiredElements.current.includes(video)) {
+                              interactionRequiredElements.current.push(video);
+                            }
                           }
-                        }
-                      });
-                    };
-                    remoteVideosRef.current[streamId] = video;
-                  }
-                  setRemoteStreams(prev => ({ ...prev, [streamId]: remoteStream }));
-                  getAudioMixer().addStream(streamId, remoteStream);
+                        });
+                      };
+                      remoteVideosRef.current[streamId] = video;
+                    }
+                    setRemoteStreams(prev => ({ ...prev, [streamId]: remoteStream }));
+                    getAudioMixer().addStream(streamId, remoteStream);
+                  },
+                  iceConfig
+                );
+                streamConnectionsRef.current[key] = conn;
+
+                // We are the sender, attach our stream if we have it
+                let myStream: MediaStream | null = null;
+                if (streamId === cameraStreamIdRef.current) myStream = mediaStreamRef.current;
+                else if (streamId === screenStreamIdRef.current) myStream = screenStreamRef.current;
+
+                if (!myStream) {
+                  console.warn(`[Signaling] Received OFFER for unknown streamId: ${streamId}. Cannot send ANSWER.`);
+                  // We'll still keep the connection object but it won't have tracks
                 }
-              );
-              streamConnectionsRef.current[key] = conn;
 
-              // We are the sender, attach our stream if we have it
-              let myStream: MediaStream | null = null;
-              if (streamId === cameraStreamIdRef.current) myStream = mediaStreamRef.current;
-              else if (streamId === screenStreamIdRef.current) myStream = screenStreamRef.current;
-              
-              if (!myStream) {
-                console.warn(`[Signaling] Received OFFER for unknown streamId: ${streamId}. Cannot send ANSWER.`);
-                // We'll still keep the connection object but it won't have tracks
-              }
-
-              conn.handleOffer(sdp, myStream || undefined).then(answer => {
-                console.log(`[Signaling] Sending ANSWER to ${from} for stream ${streamId}`);
-                sessionWs.send(JSON.stringify({
-                  type: "ANSWER",
-                  to: from,
-                  data: { streamId, sdp: answer }
-                }));
-              }).catch(err => {
-                console.error(`[Signaling] Failed to handle OFFER from ${from}:`, err);
+                conn.handleOffer(sdp, myStream || undefined).then(answer => {
+                  console.log(`[Signaling] Sending ANSWER to ${from} for stream ${streamId}`);
+                  sessionWs.send(JSON.stringify({
+                    type: "ANSWER",
+                    to: from,
+                    data: { streamId, sdp: answer }
+                  }));
+                }).catch(err => {
+                  console.error(`[Signaling] Failed to handle OFFER from ${from}:`, err);
+                });
               });
             } else {
               console.log(`[Signaling] Already have a connection for ${key}, ignoring new OFFER`);
@@ -927,7 +942,7 @@ export default function SessionPage() {
         // Calculate next retry delay: 0, 1s, 2s, 4s, 8s, 16s, 32s, 60s
         const delay = reconnectCount === 0 ? 0 : Math.min(60000, Math.pow(2, reconnectCount - 1) * 1000);
         console.log(`Retrying connection in ${delay}ms... (Attempt ${reconnectCount + 1})`);
-        
+
         reconnectTimeout = setTimeout(() => {
           reconnectCount++;
           connect();
@@ -998,7 +1013,7 @@ export default function SessionPage() {
     if (videoEncoderRef.current && videoEncoderRef.current.state === "configured") {
       try {
         await videoEncoderRef.current.flush();
-      } catch (e) {}
+      } catch (e) { }
     }
   };
 
@@ -1021,7 +1036,7 @@ export default function SessionPage() {
 
     const combinedStream = new MediaStream(tracks);
     const rm = new RecordManager(combinedStream);
-    
+
     try {
       // Accessing the file system requires a user gesture, which we have here from the button click
       await rm.start(`session-${sessionId}`);
@@ -1029,7 +1044,7 @@ export default function SessionPage() {
       setIsRecording(true);
       startEncodersIfNeeded();
     } catch (err) {
-        console.error("Recording start failed or was cancelled:", err);
+      console.error("Recording start failed or was cancelled:", err);
     }
   };
 
@@ -1089,13 +1104,13 @@ export default function SessionPage() {
 
     // Sync state if connected
     if (sessionSocketRef.current?.readyState === WebSocket.OPEN) {
-        sessionSocketRef.current.send(JSON.stringify({
-            type: "SESSION_STATE",
-            data: { 
-                layout: currentLayout.id,
-                placeholders: newPlaceholders
-            }
-        }));
+      sessionSocketRef.current.send(JSON.stringify({
+        type: "SESSION_STATE",
+        data: {
+          layout: currentLayout.id,
+          placeholders: newPlaceholders
+        }
+      }));
     }
   };
 
@@ -1117,7 +1132,7 @@ export default function SessionPage() {
       lastKeyFrameTimeRef.current = 0;
     }
   }, [isStreaming, isRecording]);
-  
+
   // Stats polling
   useEffect(() => {
     if (!isStreaming && !isRecording) {
@@ -1154,11 +1169,11 @@ export default function SessionPage() {
               <span className="text-[10px] font-black uppercase tracking-widest opacity-70">Streaming Error</span>
               <span className="font-bold text-sm">{streamingError}</span>
             </div>
-            <button 
-                onClick={() => setStreamingError(null)}
-                className="hover:bg-white/20 p-2 rounded-xl transition-all cursor-pointer ml-2"
+            <button
+              onClick={() => setStreamingError(null)}
+              className="hover:bg-white/20 p-2 rounded-xl transition-all cursor-pointer ml-2"
             >
-                <X size={18} />
+              <X size={18} />
             </button>
           </div>
         </div>
@@ -1184,15 +1199,14 @@ export default function SessionPage() {
 
           {/* Participants list moved to sidebar */}
         </div>
-        
+
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={isRecording ? stopRecording : startRecording}
-            className={`flex items-center px-6 py-2 rounded-full font-semibold transition-all shadow-lg active:scale-95 cursor-pointer text-white ${
-                isRecording 
-                    ? 'bg-red-600 hover:bg-red-700 shadow-red-500/20' 
-                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'
-            }`}
+            className={`flex items-center px-6 py-2 rounded-full font-semibold transition-all shadow-lg active:scale-95 cursor-pointer text-white ${isRecording
+                ? 'bg-red-600 hover:bg-red-700 shadow-red-500/20'
+                : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'
+              }`}
           >
             <Circle size={18} className="mr-2" fill="currentColor" />
             {isRecording ? 'Stop Recording' : 'Record'}
@@ -1204,16 +1218,15 @@ export default function SessionPage() {
                 onClick={startStreaming}
                 disabled={isConnecting}
                 title={isConnecting ? "Establishing connection..." : "Start broadcasting your stream"}
-                className={`flex items-center px-6 py-2 rounded-full font-semibold transition-all shadow-lg active:scale-95 cursor-pointer text-white ${
-                  isConnecting 
-                    ? 'bg-blue-600/50 cursor-wait' 
+                className={`flex items-center px-6 py-2 rounded-full font-semibold transition-all shadow-lg active:scale-95 cursor-pointer text-white ${isConnecting
+                    ? 'bg-blue-600/50 cursor-wait'
                     : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-500/20'
-                }`}
+                  }`}
               >
                 <PlayCircle className={`w-5 h-5 mr-2 ${isConnecting ? 'animate-spin' : ''}`} />
                 {isConnecting ? 'Connecting...' : 'Go Live'}
               </button>
-              <button 
+              <button
                 onClick={() => setIsSettingsOpen(true)}
                 className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-full transition-all active:scale-90 cursor-pointer"
                 title="Stream Settings"
@@ -1238,138 +1251,138 @@ export default function SessionPage() {
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col items-center justify-center relative min-w-0 min-h-0">
 
-        <div className="w-full h-full flex flex-col items-center justify-center min-h-0 py-12">
-          <div className="flex-1 flex items-center justify-center min-h-0 min-w-0">
-            <div className="relative group overflow-hidden rounded-3xl border border-gray-200 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.1)] bg-black transition-all duration-300">
+          <div className="w-full h-full flex flex-col items-center justify-center min-h-0 py-12">
+            <div className="flex-1 flex items-center justify-center min-h-0 min-w-0">
+              <div className="relative group overflow-hidden rounded-3xl border border-gray-200 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.1)] bg-black transition-all duration-300">
                 {/* 16:9 Aspect Ratio Spacer */}
-                <img 
-                    src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 9' width='1600' height='900'%3E%3C/svg%3E" 
-                    className="block w-full h-auto max-w-full max-h-full opacity-0 pointer-events-none"
-                    alt="" 
+                <img
+                  src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 9' width='1600' height='900'%3E%3C/svg%3E"
+                  className="block w-full h-auto max-w-full max-h-full opacity-0 pointer-events-none"
+                  alt=""
                 />
                 <div className="absolute inset-0">
-                    <canvas ref={canvasRef} width={1280} height={720} className="w-full h-full" />
-                    
-                    {isEditMode && (
-                        <div 
-                            className="absolute inset-0 z-10 cursor-default"
-                            onMouseMove={handleMouseMove}
-                            onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseUp}
-                        >
-                            {currentLayout.placeholders.map((p, i) => {
-                                const left = (p.x / 1280) * 100;
-                                const top = (p.y / 1280) * 100 * (16/9); // Adjust for container aspect ratio? 
-                                // Actually, since the container is exactly 16:9 and canvas is 1280x720 (16:9), 
-                                // we can just use percentages of the container.
-                                const width = (p.width / 1280) * 100;
-                                const height = (p.height / 720) * 100;
+                  <canvas ref={canvasRef} width={1280} height={720} className="w-full h-full" />
 
-                                return (
-                                    <div 
-                                        key={i}
-                                        className={`absolute border-2 transition-colors ${dragInfo?.index === i ? 'border-amber-500 bg-amber-500/10' : 'border-blue-500/50 hover:border-blue-500 bg-blue-500/5 hover:bg-blue-500/10'}`}
-                                        style={{
-                                            left: `${(p.x / 1280) * 100}%`,
-                                            top: `${(p.y / 720) * 100}%`,
-                                            width: `${(p.width / 1280) * 100}%`,
-                                            height: `${(p.height / 720) * 100}%`,
-                                            cursor: dragInfo ? 'grabbing' : 'grab'
-                                        }}
-                                        onMouseDown={(e) => handleMouseDown(e, i, 'move')}
-                                    >
-                                        {/* Resize handles */}
-                                        <div className="absolute -top-1 -left-1 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nw-resize" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'nw')} />
-                                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ne-resize" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'ne')} />
-                                        <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-sw-resize" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'sw')} />
-                                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-se-resize" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'se')} />
-                                        
-                                        <div className="absolute top-1/2 -left-1 w-2 h-4 bg-white border border-blue-500 rounded-sm cursor-w-resize -translate-y-1/2" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'w')} />
-                                        <div className="absolute top-1/2 -right-1 w-2 h-4 bg-white border border-blue-500 rounded-sm cursor-e-resize -translate-y-1/2" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'e')} />
-                                        <div className="absolute -top-1 left-1/2 w-4 h-2 bg-white border border-blue-500 rounded-sm cursor-n-resize -translate-x-1/2" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'n')} />
-                                        <div className="absolute -bottom-1 left-1/2 w-4 h-2 bg-white border border-blue-500 rounded-sm cursor-s-resize -translate-x-1/2" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 's')} />
-                                        
-                                        <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-blue-600 text-white text-[8px] font-bold rounded uppercase tracking-tighter opacity-80 pointer-events-none">
-                                            {p.tags.join(', ')}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                  {isEditMode && (
+                    <div
+                      className="absolute inset-0 z-10 cursor-default"
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                    >
+                      {currentLayout.placeholders.map((p, i) => {
+                        const left = (p.x / 1280) * 100;
+                        const top = (p.y / 1280) * 100 * (16 / 9); // Adjust for container aspect ratio? 
+                        // Actually, since the container is exactly 16:9 and canvas is 1280x720 (16:9), 
+                        // we can just use percentages of the container.
+                        const width = (p.width / 1280) * 100;
+                        const height = (p.height / 720) * 100;
+
+                        return (
+                          <div
+                            key={i}
+                            className={`absolute border-2 transition-colors ${dragInfo?.index === i ? 'border-amber-500 bg-amber-500/10' : 'border-blue-500/50 hover:border-blue-500 bg-blue-500/5 hover:bg-blue-500/10'}`}
+                            style={{
+                              left: `${(p.x / 1280) * 100}%`,
+                              top: `${(p.y / 720) * 100}%`,
+                              width: `${(p.width / 1280) * 100}%`,
+                              height: `${(p.height / 720) * 100}%`,
+                              cursor: dragInfo ? 'grabbing' : 'grab'
+                            }}
+                            onMouseDown={(e) => handleMouseDown(e, i, 'move')}
+                          >
+                            {/* Resize handles */}
+                            <div className="absolute -top-1 -left-1 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nw-resize" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'nw')} />
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ne-resize" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'ne')} />
+                            <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-sw-resize" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'sw')} />
+                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-se-resize" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'se')} />
+
+                            <div className="absolute top-1/2 -left-1 w-2 h-4 bg-white border border-blue-500 rounded-sm cursor-w-resize -translate-y-1/2" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'w')} />
+                            <div className="absolute top-1/2 -right-1 w-2 h-4 bg-white border border-blue-500 rounded-sm cursor-e-resize -translate-y-1/2" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'e')} />
+                            <div className="absolute -top-1 left-1/2 w-4 h-2 bg-white border border-blue-500 rounded-sm cursor-n-resize -translate-x-1/2" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 'n')} />
+                            <div className="absolute -bottom-1 left-1/2 w-4 h-2 bg-white border border-blue-500 rounded-sm cursor-s-resize -translate-x-1/2" onMouseDown={(e) => handleMouseDown(e, i, 'resize', 's')} />
+
+                            <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-blue-600 text-white text-[8px] font-bold rounded uppercase tracking-tighter opacity-80 pointer-events-none">
+                              {p.tags.join(', ')}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                
-                    <video 
-                        ref={previewVideoRef} 
-                        autoPlay 
-                        muted 
-                        playsInline 
-                        className="absolute opacity-0 pointer-events-none" 
-                        style={{ width: '1px', height: '1px' }}
-                    />
-                    <video 
-                        ref={screenVideoRef} 
-                        autoPlay 
-                        muted 
-                        playsInline 
-                        className="absolute opacity-0 pointer-events-none" 
-                        style={{ width: '1px', height: '1px' }}
-                    />
-                </div>
+
+                <video
+                  ref={previewVideoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="absolute opacity-0 pointer-events-none"
+                  style={{ width: '1px', height: '1px' }}
+                />
+                <video
+                  ref={screenVideoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="absolute opacity-0 pointer-events-none"
+                  style={{ width: '1px', height: '1px' }}
+                />
+              </div>
             </div>
 
-          {/* Toolbar */}
-          <div className="mt-8 flex items-center gap-3 bg-gray-100 border border-gray-200 p-2 rounded-2xl shrink-0 relative z-20">
+            {/* Toolbar */}
+            <div className="mt-8 flex items-center gap-3 bg-gray-100 border border-gray-200 p-2 rounded-2xl shrink-0 relative z-20">
               <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-              <button 
-                  onClick={toggleCamera}
-                  title={isCameraActive ? "Turn off camera/mic" : "Turn on camera/mic"}
-                  className={`p-4 rounded-xl transition-all cursor-pointer ${isCameraActive ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
+              <button
+                onClick={toggleCamera}
+                title={isCameraActive ? "Turn off camera/mic" : "Turn on camera/mic"}
+                className={`p-4 rounded-xl transition-all cursor-pointer ${isCameraActive ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
               >
-                  <Video size={24} />
+                <Video size={24} />
               </button>
 
               {isCameraActive && (
-                  <>
-                      <button 
-                          onClick={toggleMute}
-                          title={isMuted ? "Unmute microphone" : "Mute microphone"}
-                          className={`p-4 rounded-xl transition-all cursor-pointer ${isMuted ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
-                      >
-                          {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
-                      </button>
-                      <button 
-                          onClick={toggleVideo}
-                          title={isVideoOff ? "Enable video" : "Disable video"}
-                          className={`p-4 rounded-xl transition-all cursor-pointer ${isVideoOff ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
-                      >
-                          {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
-                      </button>
-                  </>
+                <>
+                  <button
+                    onClick={toggleMute}
+                    title={isMuted ? "Unmute microphone" : "Mute microphone"}
+                    className={`p-4 rounded-xl transition-all cursor-pointer ${isMuted ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
+                  >
+                    {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+                  </button>
+                  <button
+                    onClick={toggleVideo}
+                    title={isVideoOff ? "Enable video" : "Disable video"}
+                    className={`p-4 rounded-xl transition-all cursor-pointer ${isVideoOff ? 'bg-red-500 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
+                  >
+                    {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
+                  </button>
+                </>
               )}
-              <button 
-                  onClick={toggleScreenShare}
-                  title={isScreenSharing ? "Stop sharing screen" : "Share your screen"}
-                  className={`p-4 rounded-xl transition-all cursor-pointer ${isScreenSharing ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
+              <button
+                onClick={toggleScreenShare}
+                title={isScreenSharing ? "Stop sharing screen" : "Share your screen"}
+                className={`p-4 rounded-xl transition-all cursor-pointer ${isScreenSharing ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
               >
-                  <Monitor size={24} />
+                <Monitor size={24} />
               </button>
               <div className="w-[1px] h-8 bg-gray-200 mx-2" />
               <div className="relative">
-                <button 
-                    onClick={() => setIsLayoutMenuOpen(!isLayoutMenuOpen)}
-                    title="Change video layout"
-                    className={`flex items-center gap-2 px-4 py-4 rounded-xl transition-all cursor-pointer ${isLayoutMenuOpen ? 'bg-gray-100 text-[#002b5c]' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
+                <button
+                  onClick={() => setIsLayoutMenuOpen(!isLayoutMenuOpen)}
+                  title="Change video layout"
+                  className={`flex items-center gap-2 px-4 py-4 rounded-xl transition-all cursor-pointer ${isLayoutMenuOpen ? 'bg-gray-100 text-[#002b5c]' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
                 >
-                    <LayoutIcon size={24} />
-                    <ChevronDown size={14} className={`transition-transform duration-200 ${isLayoutMenuOpen ? 'rotate-180' : ''}`} />
+                  <LayoutIcon size={24} />
+                  <ChevronDown size={14} className={`transition-transform duration-200 ${isLayoutMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
 
                 {isLayoutMenuOpen && (
                   <>
-                    <div 
-                      className="fixed inset-0 z-30" 
-                      onClick={() => setIsLayoutMenuOpen(false)} 
+                    <div
+                      className="fixed inset-0 z-30"
+                      onClick={() => setIsLayoutMenuOpen(false)}
                     />
                     <div className="absolute bottom-full mb-4 left-0 w-56 bg-white border border-gray-200 rounded-2xl p-2 shadow-2xl z-40 animate-in fade-in slide-in-from-bottom-4 duration-200">
                       <p className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Select Layout</p>
@@ -1388,11 +1401,10 @@ export default function SessionPage() {
                               setSessionState(data);
                             }
                           }}
-                          className={`w-full flex items-center justify-between px-3 py-3 rounded-xl transition-all mb-1 last:mb-0 cursor-pointer ${
-                            currentLayout.id === layout.id 
-                              ? 'bg-blue-600 text-white' 
+                          className={`w-full flex items-center justify-between px-3 py-3 rounded-xl transition-all mb-1 last:mb-0 cursor-pointer ${currentLayout.id === layout.id
+                              ? 'bg-blue-600 text-white'
                               : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center gap-3">
                             {layout.id === '2x2' ? <LayoutGrid size={18} /> : <Presentation size={18} />}
@@ -1405,243 +1417,239 @@ export default function SessionPage() {
                   </>
                 )}
               </div>
-              <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Upload background image"
-                  className={`p-4 rounded-xl transition-all cursor-pointer ${bgImage ? 'bg-emerald-600 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload background image"
+                className={`p-4 rounded-xl transition-all cursor-pointer ${bgImage ? 'bg-emerald-600 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
               >
-                  <ImageIcon size={24} />
+                <ImageIcon size={24} />
               </button>
-              <button 
-                  onClick={() => setIsEditMode(!isEditMode)}
-                  title={isEditMode ? "Exit edit mode" : "Enter edit mode"}
-                  className={`p-4 rounded-xl transition-all cursor-pointer ${isEditMode ? 'bg-amber-500 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
+              <button
+                onClick={() => setIsEditMode(!isEditMode)}
+                title={isEditMode ? "Exit edit mode" : "Enter edit mode"}
+                className={`p-4 rounded-xl transition-all cursor-pointer ${isEditMode ? 'bg-amber-500 text-white' : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-500'}`}
               >
-                  <Pencil size={24} />
+                <Pencil size={24} />
               </button>
               <div className="w-[1px] h-8 bg-gray-200 mx-2" />
-              <button 
-                  onClick={() => setIsInviteOpen(true)}
-                  title="Invite others to join this session"
-                  className="p-4 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-500 transition-all cursor-pointer"
+              <button
+                onClick={() => setIsInviteOpen(true)}
+                title="Invite others to join this session"
+                className="p-4 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 text-gray-500 transition-all cursor-pointer"
               >
-                  <Users size={24} />
+                <Users size={24} />
               </button>
 
 
+            </div>
           </div>
+
+          {/* Invite Popup */}
+          {isInviteOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+              <div
+                className="absolute inset-0"
+                onClick={() => setIsInviteOpen(false)}
+              />
+              <div className="relative w-full max-w-md bg-gray-900 border border-white/10 rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-200">
+                <button
+                  onClick={() => setIsInviteOpen(false)}
+                  className="absolute top-6 right-6 p-2 text-gray-500 hover:text-white transition-colors"
+                >
+                  <X size={20} />
+                </button>
+
+                <h3 className="text-2xl font-bold mb-2">Invite Others</h3>
+                <p className="text-gray-400 mb-6">Share this link with participants to join your session.</p>
+
+                <div className="space-y-4">
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-4 flex items-center text-gray-500">
+                      <LinkIcon size={18} />
+                    </div>
+                    <input
+                      readOnly
+                      value={`${typeof window !== 'undefined' ? window.location.origin : ''}/sessions/${sessionId}`}
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm text-gray-300 focus:outline-none focus:border-blue-500/50 transition-colors"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}/sessions/${sessionId}`;
+                      navigator.clipboard.writeText(url);
+                      setIsCopied(true);
+                      setTimeout(() => setIsCopied(false), 2000);
+                    }}
+                    className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-bold transition-all ${isCopied
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-blue-500/20 active:scale-[0.98]'
+                      }`}
+                  >
+                    {isCopied ? (
+                      <>
+                        <Check size={20} />
+                        <span>Copied to Clipboard!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={20} />
+                        <span>Copy Invitation Link</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Invite Popup */}
-        {isInviteOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div 
-              className="absolute inset-0" 
-              onClick={() => setIsInviteOpen(false)} 
-            />
-            <div className="relative w-full max-w-md bg-gray-900 border border-white/10 rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-200">
-              <button 
-                onClick={() => setIsInviteOpen(false)}
-                className="absolute top-6 right-6 p-2 text-gray-500 hover:text-white transition-colors"
+        {/* Right Sidebar Area (Floating) */}
+        <div className="relative z-20 flex flex-col justify-center h-full shrink-0">
+          {isSidebarCollapsed ? (
+            <div className="flex flex-col items-center py-6 h-full bg-white/90 backdrop-blur-xl border border-gray-200 border-r-0 w-20 rounded-l-xl rounded-r-none transition-all duration-300">
+              <button
+                onClick={() => setIsSidebarCollapsed(false)}
+                className="p-3 rounded-2xl hover:bg-gray-100 text-gray-400 hover:text-gray-900 transition-all cursor-pointer"
+                title="Expand Sidebar"
               >
-                <X size={20} />
+                <ChevronLeft size={24} />
               </button>
-              
-              <h3 className="text-2xl font-bold mb-2">Invite Others</h3>
-              <p className="text-gray-400 mb-6">Share this link with participants to join your session.</p>
-              
-              <div className="space-y-4">
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-4 flex items-center text-gray-500">
-                    <LinkIcon size={18} />
-                  </div>
-                  <input 
-                    readOnly 
-                    value={`${typeof window !== 'undefined' ? window.location.origin : ''}/sessions/${sessionId}`}
-                    className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm text-gray-300 focus:outline-none focus:border-blue-500/50 transition-colors"
-                  />
-                </div>
-                
-                <button 
-                  onClick={() => {
-                    const url = `${window.location.origin}/sessions/${sessionId}`;
-                    navigator.clipboard.writeText(url);
-                    setIsCopied(true);
-                    setTimeout(() => setIsCopied(false), 2000);
-                  }}
-                  className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-bold transition-all ${
-                    isCopied 
-                      ? 'bg-emerald-600 text-white' 
-                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-blue-500/20 active:scale-[0.98]'
-                  }`}
-                >
-                  {isCopied ? (
-                    <>
-                      <Check size={20} />
-                      <span>Copied to Clipboard!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={20} />
-                      <span>Copy Invitation Link</span>
-                    </>
+              <div className="mt-8 flex flex-col items-center gap-6">
+                <button onClick={() => { setActiveTab('chat'); setIsSidebarCollapsed(false); }} className="relative group">
+                  <MessageSquare className={activeTab === 'chat' ? "text-blue-600" : "text-gray-300 group-hover:text-gray-400"} size={24} />
+                  {activeTab === 'chat' && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white" />
+                  )}
+                </button>
+                <button onClick={() => { setActiveTab('guests'); setIsSidebarCollapsed(false); }} className="relative group">
+                  <Users className={activeTab === 'guests' ? "text-blue-600" : "text-gray-300 group-hover:text-gray-400"} size={24} />
+                  {activeTab === 'guests' && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white" />
+                  )}
+                </button>
+                <button onClick={() => { setActiveTab('debug'); setIsSidebarCollapsed(false); }} className="relative group">
+                  <Settings2 className={activeTab === 'debug' ? "text-blue-600" : "text-gray-300 group-hover:text-gray-400"} size={24} />
+                  {activeTab === 'debug' && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white" />
                   )}
                 </button>
               </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Right Sidebar Area (Floating) */}
-      <div className="relative z-20 flex flex-col justify-center h-full shrink-0">
-        {isSidebarCollapsed ? (
-            <div className="flex flex-col items-center py-6 h-full bg-white/90 backdrop-blur-xl border border-gray-200 border-r-0 w-20 rounded-l-xl rounded-r-none transition-all duration-300">
-                <button 
-                    onClick={() => setIsSidebarCollapsed(false)}
-                    className="p-3 rounded-2xl hover:bg-gray-100 text-gray-400 hover:text-gray-900 transition-all cursor-pointer"
-                    title="Expand Sidebar"
-                >
-                    <ChevronLeft size={24} />
-                </button>
-                <div className="mt-8 flex flex-col items-center gap-6">
-                    <button onClick={() => { setActiveTab('chat'); setIsSidebarCollapsed(false); }} className="relative group">
-                        <MessageSquare className={activeTab === 'chat' ? "text-blue-600" : "text-gray-300 group-hover:text-gray-400"} size={24} />
-                        {activeTab === 'chat' && (
-                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white" />
-                        )}
-                    </button>
-                    <button onClick={() => { setActiveTab('guests'); setIsSidebarCollapsed(false); }} className="relative group">
-                        <Users className={activeTab === 'guests' ? "text-blue-600" : "text-gray-300 group-hover:text-gray-400"} size={24} />
-                        {activeTab === 'guests' && (
-                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white" />
-                        )}
-                    </button>
-                    <button onClick={() => { setActiveTab('debug'); setIsSidebarCollapsed(false); }} className="relative group">
-                        <Settings2 className={activeTab === 'debug' ? "text-blue-600" : "text-gray-300 group-hover:text-gray-400"} size={24} />
-                        {activeTab === 'debug' && (
-                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white" />
-                        )}
-                    </button>
-                </div>
-            </div>
-        ) : (
+          ) : (
             <div className="flex flex-col h-full bg-white/95 backdrop-blur-xl border border-gray-200 border-r-0 w-[360px] rounded-l-xl rounded-r-none transition-all duration-500 relative overflow-hidden group">
-                {/* Tabs Header */}
-                <div className="flex bg-gray-50/30 p-1 border-b border-gray-100">
-                    <button 
-                        onClick={() => setActiveTab('chat')}
-                        className={`flex-1 py-3 rounded-lg font-bold text-[13px] uppercase tracking-wide transition-all cursor-pointer ${
-                            activeTab === 'chat' 
-                                ? 'bg-white text-blue-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)]' 
-                                : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
-                        }`}
-                    >
-                        Chat
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('guests')}
-                        className={`flex-1 py-3 rounded-lg font-bold text-[13px] uppercase tracking-wide transition-all cursor-pointer ${
-                            activeTab === 'guests' 
-                                ? 'bg-white text-blue-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)]' 
-                                : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
-                        }`}
-                    >
-                        Guests
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('debug')}
-                        className={`flex-1 py-3 rounded-lg font-bold text-[13px] uppercase tracking-wide transition-all cursor-pointer ${
-                            activeTab === 'debug' 
-                                ? 'bg-white text-blue-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)]' 
-                                : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
-                        }`}
-                    >
-                        Debug
-                    </button>
-                    <button 
-                        onClick={() => setIsSidebarCollapsed(true)}
-                        className="w-8 h-10 flex items-center justify-center text-gray-300 hover:text-gray-600 transition-all cursor-pointer"
-                        title="Collapse Sidebar"
-                    >
-                        <ChevronRight size={16} />
-                    </button>
-                </div>
+              {/* Tabs Header */}
+              <div className="flex bg-gray-50/30 p-1 border-b border-gray-100">
+                <button
+                  onClick={() => setActiveTab('chat')}
+                  className={`flex-1 py-3 rounded-lg font-bold text-[13px] uppercase tracking-wide transition-all cursor-pointer ${activeTab === 'chat'
+                      ? 'bg-white text-blue-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)]'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
+                    }`}
+                >
+                  Chat
+                </button>
+                <button
+                  onClick={() => setActiveTab('guests')}
+                  className={`flex-1 py-3 rounded-lg font-bold text-[13px] uppercase tracking-wide transition-all cursor-pointer ${activeTab === 'guests'
+                      ? 'bg-white text-blue-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)]'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
+                    }`}
+                >
+                  Guests
+                </button>
+                <button
+                  onClick={() => setActiveTab('debug')}
+                  className={`flex-1 py-3 rounded-lg font-bold text-[13px] uppercase tracking-wide transition-all cursor-pointer ${activeTab === 'debug'
+                      ? 'bg-white text-blue-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)]'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
+                    }`}
+                >
+                  Debug
+                </button>
+                <button
+                  onClick={() => setIsSidebarCollapsed(true)}
+                  className="w-8 h-10 flex items-center justify-center text-gray-300 hover:text-gray-600 transition-all cursor-pointer"
+                  title="Collapse Sidebar"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
 
-                <div className="flex-1 overflow-hidden relative">
-                    <div className={`absolute inset-0 transition-all duration-300 transform ${activeTab === 'chat' ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'}`}>
-                        <Chat 
-                            messages={messages} 
-                            onSendMessage={handleSendMessage} 
-                            status={sessionStatus} 
-                            userName={userName} 
-                            participants={participants}
-                            hideHeader={true}
-                        />
-                    </div>
-                    <div className={`absolute inset-0 transition-all duration-300 transform ${activeTab === 'guests' ? 'translate-x-0 opacity-100' : (activeTab === 'chat' ? 'translate-x-full' : '-translate-x-full') + ' opacity-0 pointer-events-none'}`}>
-                        <Guests 
-                            participants={participants}
-                            userName={userName}
-                            myClientId={myClientId}
-                        />
-                    </div>
-                    <div className={`absolute inset-0 transition-all duration-300 transform ${activeTab === 'debug' ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}>
-                        <Debug 
-                            status={sessionStatus}
-                            participants={participants}
-                            streams={streams}
-                            myClientId={myClientId}
-                            streamConnections={streamConnectionsStatus}
-                            sessionState={sessionState}
-                            hideHeader={true}
-                        />
-                    </div>
+              <div className="flex-1 overflow-hidden relative">
+                <div className={`absolute inset-0 transition-all duration-300 transform ${activeTab === 'chat' ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'}`}>
+                  <Chat
+                    messages={messages}
+                    onSendMessage={handleSendMessage}
+                    status={sessionStatus}
+                    userName={userName}
+                    participants={participants}
+                    hideHeader={true}
+                  />
                 </div>
+                <div className={`absolute inset-0 transition-all duration-300 transform ${activeTab === 'guests' ? 'translate-x-0 opacity-100' : (activeTab === 'chat' ? 'translate-x-full' : '-translate-x-full') + ' opacity-0 pointer-events-none'}`}>
+                  <Guests
+                    participants={participants}
+                    userName={userName}
+                    myClientId={myClientId}
+                  />
+                </div>
+                <div className={`absolute inset-0 transition-all duration-300 transform ${activeTab === 'debug' ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}>
+                  <Debug
+                    status={sessionStatus}
+                    participants={participants}
+                    streams={streams}
+                    myClientId={myClientId}
+                    streamConnections={streamConnectionsStatus}
+                    sessionState={sessionState}
+                    hideHeader={true}
+                  />
+                </div>
+              </div>
             </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
       {isSettingsOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300">
-              <div className="p-8">
-                  <div className="flex justify-between items-center mb-6">
-                      <h2 className="text-2xl font-black text-[#002b5c]">Stream Settings</h2>
-                      <button onClick={() => setIsSettingsOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors cursor-pointer">
-                          <X size={20} className="text-gray-400" />
-                      </button>
-                  </div>
-                  
-                  <div className="space-y-6">
-                      <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wider">RTMP Destination URL</label>
-                          <div className="relative">
-                              <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                              <input 
-                                  type="text" 
-                                  value={rtmpUrl}
-                                  onChange={(e) => setRtmpUrl(e.target.value)}
-                                  placeholder="rtmp://localhost:1935/live/stream1"
-                                  className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-600 font-medium"
-                              />
-                          </div>
-                          <p className="mt-2 text-xs text-gray-400">Specify the ingest URL of your streaming service (YouTube, Twitch, or local FFmpeg).</p>
-                      </div>
-
-                      <div className="pt-4 flex gap-3">
-                          <button 
-                              onClick={() => {
-                                  localStorage.setItem("canvastream_rtmp_url", rtmpUrl);
-                                  setIsSettingsOpen(false);
-                              }}
-                              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-2xl transition-all shadow-lg shadow-blue-500/20 active:scale-95 cursor-pointer"
-                          >
-                              Save Configuration
-                          </button>
-                      </div>
-                  </div>
+            <div className="p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-[#002b5c]">Stream Settings</h2>
+                <button onClick={() => setIsSettingsOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors cursor-pointer">
+                  <X size={20} className="text-gray-400" />
+                </button>
               </div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wider">RTMP Destination URL</label>
+                  <div className="relative">
+                    <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input
+                      type="text"
+                      value={rtmpUrl}
+                      onChange={(e) => setRtmpUrl(e.target.value)}
+                      placeholder="rtmp://localhost:1935/live/stream1"
+                      className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-600 font-medium"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-gray-400">Specify the ingest URL of your streaming service (YouTube, Twitch, or local FFmpeg).</p>
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button
+                    onClick={() => {
+                      localStorage.setItem("canvastream_rtmp_url", rtmpUrl);
+                      setIsSettingsOpen(false);
+                    }}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-2xl transition-all shadow-lg shadow-blue-500/20 active:scale-95 cursor-pointer"
+                  >
+                    Save Configuration
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

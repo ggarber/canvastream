@@ -1,6 +1,43 @@
 
 export type StreamConnectionStatus = RTCPeerConnectionState | 'initializing';
 
+/**
+ * Fetches ICE configuration (STUN/TURN servers) from the server.
+ * Follows the TURN REST API convention.
+ */
+export async function getIceConfig(sessionId?: string): Promise<RTCConfiguration> {
+    try {
+        const url = sessionId ? `/api/ice?sessionId=${sessionId}` : '/api/ice';
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to fetch ICE config');
+        
+        const data = await response.json();
+        
+        // Map TURN REST API format to browser RTCConfiguration
+        if (data.username && data.password) {
+            return {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    {
+                        urls: data.uris,
+                        username: data.username,
+                        credential: data.password
+                    }
+                ]
+            };
+        } else {
+            return {
+                iceServers: [{ urls: data.uris || ['stun:stun.l.google.com:19302'] }]
+            };
+        }
+    } catch (error) {
+        console.error('Error fetching ICE config, falling back to default:', error);
+        return {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+    }
+}
+
 export class StreamConnection {
     pc: RTCPeerConnection;
     streamId: string;
@@ -14,7 +51,8 @@ export class StreamConnection {
         remoteClientId: string,
         isInitiator: boolean,
         onStatusChange: (status: StreamConnectionStatus) => void,
-        onTrack?: (track: MediaStreamTrack, stream: MediaStream) => void
+        onTrack?: (track: MediaStreamTrack, stream: MediaStream) => void,
+        config?: RTCConfiguration
     ) {
         this.streamId = streamId;
         this.remoteClientId = remoteClientId;
@@ -22,7 +60,7 @@ export class StreamConnection {
         this.onStatusChange = onStatusChange;
         this.onTrack = onTrack;
 
-        this.pc = new RTCPeerConnection({
+        this.pc = new RTCPeerConnection(config || {
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         });
 
