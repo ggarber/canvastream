@@ -149,6 +149,21 @@ func handleSession(w http.ResponseWriter, r *http.Request) {
 				displayName = clientID
 			}
 
+			// Send connection response FIRST so client knows its ID before receiving state
+			msg.From = "server"
+			msg.Type = "response"
+			msg.Data = map[string]string{
+				"status":       "connected",
+				"connectionId": clientID,
+			}
+
+			registered = true
+			log.Printf("[%s] REGISTERED clientID=%s name=%s\n", sessionId, clientID, displayName)
+			if err := ws.WriteJSON(msg); err != nil {
+				log.Printf("[%s] session write connect error: %v\n", sessionId, err)
+				break
+			}
+
 			sessionsMu.Lock()
 			if sessions[sessionId] == nil {
 				sessions[sessionId] = make(map[string]*websocket.Conn)
@@ -201,20 +216,6 @@ func handleSession(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			sessionsMu.Unlock()
-
-			msg.From = "server"
-			msg.Type = "response"
-			msg.Data = map[string]string{
-				"status":       "connected",
-				"connectionId": clientID,
-			}
-
-			registered = true
-			log.Printf("[%s] REGISTERED clientID=%s name=%s\n", sessionId, clientID, displayName)
-			if err := ws.WriteJSON(msg); err != nil {
-				log.Printf("[%s] session write connect error: %v\n", sessionId, err)
-				break
-			}
 			continue
 		}
 
