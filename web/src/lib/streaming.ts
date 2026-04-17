@@ -38,10 +38,12 @@ export function setupSharedAudioEncoder(
   const settings = audioTrack.getSettings();
   console.log("Encoding Audio settings:", settings);
 
+  const targetSampleRate = [44100, 48000].includes(settings.sampleRate || 44100) ? (settings.sampleRate || 44100) : 48000;
+
   encoder.configure({
     codec: "mp4a.40.2",
     numberOfChannels: settings.channelCount || 1,
-    sampleRate: settings.sampleRate || 44100,
+    sampleRate: targetSampleRate,
     bitrate: 128000,
   });
 
@@ -84,7 +86,8 @@ export class StreamManager {
   private baseTime: number | null = null;
   private lastVideoTimestamp = -1;
   private lastAudioTimestamp = -1;
-  private chunkCount = 0;
+  private videoChunkCount = 0;
+  private audioChunkCount = 0;
   private videoBytes = 0;
   private videoFrames = 0;
   private audioBytes = 0;
@@ -173,7 +176,7 @@ export class StreamManager {
       msg.set(videoPacket, 5);
       this.ws.send(msg);
       this.videoBytes += msg.byteLength;
-      this.chunkCount++;
+      this.videoChunkCount++;
     }
 
     const videoPacket = new Uint8Array(5 + data.byteLength);
@@ -192,7 +195,7 @@ export class StreamManager {
     this.ws.send(totalMsg);
     this.videoBytes += totalMsg.byteLength;
     this.videoFrames++;
-    this.chunkCount++;
+    this.videoChunkCount++;
   };
 
   public handleAudioChunk = (chunk: EncodedAudioChunk, metadata: EncodedAudioChunkMetadata | undefined, settings: MediaTrackSettings) => {
@@ -230,7 +233,7 @@ export class StreamManager {
       msg.set(audioPacket, 5);
       this.ws.send(msg);
       this.audioBytes += msg.byteLength;
-      this.chunkCount++;
+      this.audioChunkCount++;
     }
 
     const audioPacket = new Uint8Array(2 + data.byteLength);
@@ -244,11 +247,11 @@ export class StreamManager {
     totalMsg.set(audioPacket, 5);
     this.ws.send(totalMsg);
     this.audioBytes += totalMsg.byteLength;
-    this.chunkCount++;
+    this.audioChunkCount++;
   };
 
   public getStats() {
-    return { chunks: this.chunkCount };
+    return { videoChunks: this.videoChunkCount, audioChunks: this.audioChunkCount };
   }
 
   public stop() {

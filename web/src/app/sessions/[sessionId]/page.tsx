@@ -27,7 +27,7 @@ export default function SessionPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [stats, setStats] = useState({ recordedChunks: 0, streamedChunks: 0 });
+  const [stats, setStats] = useState({ recordedVideoChunks: 0, recordedAudioChunks: 0, streamedVideoChunks: 0, streamedAudioChunks: 0 });
   const [streamingPollCount, setStreamingPollCount] = useState(0);
   const [recordingPollCount, setRecordingPollCount] = useState(0);
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
@@ -1136,16 +1136,20 @@ export default function SessionPage() {
   // Stats polling
   useEffect(() => {
     if (!isStreaming && !isRecording) {
-      setStats({ recordedChunks: 0, streamedChunks: 0 });
+      setStats({ recordedVideoChunks: 0, recordedAudioChunks: 0, streamedVideoChunks: 0, streamedAudioChunks: 0 });
       setStreamingPollCount(0);
       setRecordingPollCount(0);
       return;
     }
 
     const updateStats = () => {
+      const rStats = recordManagerRef.current?.getStats() || { videoChunks: 0, audioChunks: 0 };
+      const sStats = streamManagerRef.current?.getStats() || { videoChunks: 0, audioChunks: 0 };
       setStats({
-        recordedChunks: recordManagerRef.current?.getStats().chunks ?? 0,
-        streamedChunks: streamManagerRef.current?.getStats().chunks ?? 0
+        recordedVideoChunks: rStats.videoChunks,
+        recordedAudioChunks: rStats.audioChunks,
+        streamedVideoChunks: sStats.videoChunks,
+        streamedAudioChunks: sStats.audioChunks
       });
       setStreamingPollCount(prev => isStreaming ? prev + 1 : 0);
       setRecordingPollCount(prev => isRecording ? prev + 1 : 0);
@@ -1179,13 +1183,13 @@ export default function SessionPage() {
         </div>
       )}
 
-      {((isStreaming && streamingPollCount >= 6 && stats.streamedChunks === 0) || (isRecording && recordingPollCount >= 6 && stats.recordedChunks === 0)) && (
+      {((isStreaming && streamingPollCount >= 6 && (stats.streamedVideoChunks === 0 || stats.streamedAudioChunks === 0)) || (isRecording && recordingPollCount >= 6 && (stats.recordedVideoChunks === 0 || stats.recordedAudioChunks === 0))) && (
         <div className="fixed top-0 left-0 right-0 z-[200] bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-3 font-bold animate-in slide-in-from-top duration-300">
           <div className="bg-white/20 p-1.5 rounded-full">
             <Settings2 size={16} className="animate-pulse" />
           </div>
           <p>
-            Warning: {isStreaming && streamingPollCount >= 6 && stats.streamedChunks === 0 ? "Streaming" : ""}{isStreaming && streamingPollCount >= 6 && stats.streamedChunks === 0 && isRecording && recordingPollCount >= 6 && stats.recordedChunks === 0 ? " and " : ""}{isRecording && recordingPollCount >= 6 && stats.recordedChunks === 0 ? "Recording" : ""} could be not working (0 chunks processed).
+            Warning: {isStreaming && streamingPollCount >= 6 && (stats.streamedVideoChunks === 0 || stats.streamedAudioChunks === 0) ? "Streaming" : ""}{isStreaming && streamingPollCount >= 6 && (stats.streamedVideoChunks === 0 || stats.streamedAudioChunks === 0) && isRecording && recordingPollCount >= 6 && (stats.recordedVideoChunks === 0 || stats.recordedAudioChunks === 0) ? " and " : ""}{isRecording && recordingPollCount >= 6 && (stats.recordedVideoChunks === 0 || stats.recordedAudioChunks === 0) ? "Recording" : ""} could be not working (audio or video chunks not processing).
           </p>
         </div>
       )}

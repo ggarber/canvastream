@@ -11,6 +11,7 @@ export class RecordManager {
   private chunkCount = 0;
   private recordedBytes = 0;
   private videoFrames = 0;
+  private audioFrames = 0;
   private statsInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(private stream: MediaStream) {
@@ -22,6 +23,7 @@ export class RecordManager {
     this.chunkCount = 0;
     this.recordedBytes = 0;
     this.videoFrames = 0;
+    this.audioFrames = 0;
 
     // 1. Identify supported codec and extension BEFORE showing picker
     const types = [
@@ -134,12 +136,14 @@ export class RecordManager {
     this.videoFrames++;
   };
   
-  public handleAudioChunk = (_chunk: EncodedAudioChunk, _metadata: EncodedAudioChunkMetadata | undefined) => { };
+  public handleAudioChunk = (_chunk: EncodedAudioChunk, _metadata: EncodedAudioChunkMetadata | undefined) => {
+    this.audioFrames++;
+  };
 
   public getStats() {
     return { 
-      // We use videoFrames as "chunks" for the UI warning to be consistent with StreamManager
-      chunks: this.videoFrames,
+      videoChunks: this.videoFrames,
+      audioChunks: this.audioFrames,
       bytes: this.recordedBytes
     };
   }
