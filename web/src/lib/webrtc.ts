@@ -45,6 +45,7 @@ export class StreamConnection {
     isInitiator: boolean;
     onStatusChange: (status: StreamConnectionStatus) => void;
     onTrack?: (track: MediaStreamTrack, stream: MediaStream) => void;
+    onIceCandidate?: (candidate: RTCIceCandidate) => void;
 
     constructor(
         streamId: string,
@@ -52,6 +53,7 @@ export class StreamConnection {
         isInitiator: boolean,
         onStatusChange: (status: StreamConnectionStatus) => void,
         onTrack?: (track: MediaStreamTrack, stream: MediaStream) => void,
+        onIceCandidate?: (candidate: RTCIceCandidate) => void,
         config?: RTCConfiguration
     ) {
         this.streamId = streamId;
@@ -59,6 +61,7 @@ export class StreamConnection {
         this.isInitiator = isInitiator;
         this.onStatusChange = onStatusChange;
         this.onTrack = onTrack;
+        this.onIceCandidate = onIceCandidate;
 
         this.pc = new RTCPeerConnection(config || {
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -77,39 +80,22 @@ export class StreamConnection {
             }
         };
 
-        // Handle ICE candidates (simplified: usually needs trickle ICE, but we can bundle for simplicity or use a signaling message)
         this.pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                // In a production app, we'd send individual candidates via the socket.
-                // For this implementation, we might wait for the complete SDP or use a simpler signaling.
-                // However, the user request says "after initializing... sender will reply with an ANSWER after setRemoteDescription and getLocalDescription() calls".
-                // This implies we send the SDP after ICE gathering might be done, or just send the initial SDP.
+            if (event.candidate && this.onIceCandidate) {
+                this.onIceCandidate(event.candidate);
             }
         };
     }
 
     async createOffer(): Promise<RTCSessionDescriptionInit> {
-        // "initializing the PeerConnection to receive 1 audio and 1 video stream"
         this.pc.addTransceiver('audio', { direction: 'recvonly' });
         this.pc.addTransceiver('video', { direction: 'recvonly' });
 
         const offer = await this.pc.createOffer();
         await this.pc.setLocalDescription(offer);
         
-        // Wait for ICE gathering to complete before returning the final SDP
-        // This makes signaling simpler as we don't need to handle ICE candidates separately
-        if (this.pc.iceGatheringState !== 'complete') {
-            await new Promise<void>((resolve) => {
-                const checkState = () => {
-                    if (this.pc.iceGatheringState === 'complete') {
-                        this.pc.removeEventListener('icegatheringstatechange', checkState);
-                        resolve();
-                    }
-                };
-                this.pc.addEventListener('icegatheringstatechange', checkState);
-            });
-        }
-
+        // We no longer wait for ICE gathering to complete.
+        // Candidates will be sent via Trickle ICE as they are discovered.
         return this.pc.localDescription!;
     }
 
@@ -125,27 +111,26 @@ export class StreamConnection {
         const answer = await this.pc.createAnswer();
         await this.pc.setLocalDescription(answer);
 
-        // Wait for ICE gathering
-        if (this.pc.iceGatheringState !== 'complete') {
-            await new Promise<void>((resolve) => {
-                const checkState = () => {
-                    if (this.pc.iceGatheringState === 'complete') {
-                        this.pc.removeEventListener('icegatheringstatechange', checkState);
-                        resolve();
-                    }
-                };
-                this.pc.addEventListener('icegatheringstatechange', checkState);
-            });
-        }
-
+        // We no longer wait for ICE gathering to complete.
         return this.pc.localDescription!;
     }
 
     async handleAnswer(sdp: RTCSessionDescriptionInit) {
-        await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        if (this.pc.signalingState !== "stable") {
+            await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        }
+    }
+
+    async addIceCandidate(candidate: RTCIceCandidateInit) {
+        try {
+            await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+            console.error("[WebRTC] Error adding received ice candidate", e);
+        }
     }
 
     close() {
         this.pc.close();
     }
 }
+

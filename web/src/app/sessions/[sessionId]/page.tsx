@@ -805,6 +805,15 @@ export default function SessionPage() {
                       setRemoteStreams(prev => ({ ...prev, [stream.streamId]: remoteStream }));
                       getAudioMixer().addStream(stream.streamId, remoteStream);
                     },
+                    (candidate) => {
+                      if (sessionWs.readyState === WebSocket.OPEN) {
+                        sessionWs.send(JSON.stringify({
+                          type: "ICE_CANDIDATE",
+                          to: stream.from,
+                          data: { streamId: stream.streamId, candidate }
+                        }));
+                      }
+                    },
                     iceConfig
                   );
                   console.log(`[Signaling] Initiating connection for stream ${stream.streamId} from ${stream.from}`);
@@ -883,6 +892,15 @@ export default function SessionPage() {
                     setRemoteStreams(prev => ({ ...prev, [streamId]: remoteStream }));
                     getAudioMixer().addStream(streamId, remoteStream);
                   },
+                  (candidate) => {
+                    if (sessionWs.readyState === WebSocket.OPEN) {
+                      sessionWs.send(JSON.stringify({
+                        type: "ICE_CANDIDATE",
+                        to: from,
+                        data: { streamId, candidate }
+                      }));
+                    }
+                  },
                   iceConfig
                 );
                 streamConnectionsRef.current[key] = conn;
@@ -925,6 +943,14 @@ export default function SessionPage() {
               });
             } else {
               console.warn(`[Signaling] Received ANSWER from ${from} but no pending connection for ${key}`);
+            }
+          } else if (msg.type === "ICE_CANDIDATE") {
+            const { streamId, candidate } = msg.data;
+            const from = msg.from;
+            const key = `${from}||${streamId}`;
+            const conn = streamConnectionsRef.current[key];
+            if (conn) {
+              conn.addIceCandidate(candidate);
             }
           }
         } catch (err) {
