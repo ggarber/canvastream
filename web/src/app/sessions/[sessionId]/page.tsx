@@ -568,6 +568,7 @@ export default function SessionPage() {
     }
 
     if (getAudioMixer().getMixedStream() && !audioEncoderSetupRef.current) {
+      getAudioMixer().resume();
       audioEncoderSetupRef.current = setupSharedAudioEncoder(getAudioMixer().getMixedStream(), handleAudioChunk);
     }
   };
@@ -587,6 +588,7 @@ export default function SessionPage() {
         setStreamingError(null);
         frameCountRef.current = 0; // Force immediate keyframe for new stream
         lastKeyFrameTimeRef.current = 0;
+        getAudioMixer().resume();
         startEncodersIfNeeded();
       },
       (msg) => {
@@ -1007,7 +1009,17 @@ export default function SessionPage() {
       sessionStatus,
       sessionState
     };
-  }, [sessionId, userName, participants, streams, myClientId, sessionStatus]);
+  }, [sessionId, userName, participants, streams, myClientId, sessionStatus, sessionState]);
+  
+  // Cleanup audio mixer on unmount
+  useEffect(() => {
+    return () => {
+      if (audioMixerRef.current) {
+        audioMixerRef.current.close();
+        audioMixerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSendMessage = useCallback((text: string) => {
     if (sessionSocketRef.current?.readyState === WebSocket.OPEN) {
@@ -1051,16 +1063,15 @@ export default function SessionPage() {
     // Capture canvas stream at 30fps
     // @ts-ignore - captureStream might not be in all TS sets
     const canvasStream = canvas.captureStream(30);
-    const tracks = [...canvasStream.getTracks()];
-
-    // Add audio tracks if available from the camera/mic stream
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getAudioTracks().forEach(track => {
-        tracks.push(track);
-      });
-    }
-
-    const combinedStream = new MediaStream(tracks);
+    // Get mixed audio from all sources (local camera, screen, and all remote participants)
+    getAudioMixer().resume();
+    const mixedAudioStream = getAudioMixer().getMixedStream();
+    
+    // Combine canvas video with mixed audio
+    const combinedStream = new MediaStream([
+      ...canvasStream.getVideoTracks(),
+      ...mixedAudioStream.getAudioTracks()
+    ]);
     const rm = new RecordManager(combinedStream);
 
     try {
