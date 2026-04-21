@@ -4,7 +4,9 @@ export class AudioMixer {
   private sources: Map<string, MediaStreamAudioSourceNode> = new Map();
 
   constructor() {
-    this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
+    this.context = new (window.AudioContext || (window as any).webkitAudioContext)({
+      sampleRate: 48000,
+    });
     this.destination = this.context.createMediaStreamDestination();
   }
 

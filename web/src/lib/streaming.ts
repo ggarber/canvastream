@@ -38,12 +38,18 @@ export function setupSharedAudioEncoder(
   const settings = audioTrack.getSettings();
   console.log("Encoding Audio settings:", settings);
 
-  const targetSampleRate = [44100, 48000].includes(settings.sampleRate || 44100) ? (settings.sampleRate || 44100) : 48000;
+  // AudioEncoder MUST be configured with the same sample rate as the input AudioData.
+  // MediaStreamTrackProcessor produces data at the track's sample rate.
+  const trackSampleRate = settings.sampleRate || 48000;
+  
+  if (![44100, 48000].includes(trackSampleRate)) {
+    console.warn(`[AudioEncoder] Using non-standard sample rate: ${trackSampleRate}. RTMP destinations might prefer 44100 or 48000.`);
+  }
 
   encoder.configure({
     codec: "mp4a.40.2",
     numberOfChannels: settings.channelCount || 1,
-    sampleRate: targetSampleRate,
+    sampleRate: trackSampleRate,
     bitrate: 128000,
   });
 
