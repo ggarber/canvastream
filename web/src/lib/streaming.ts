@@ -89,8 +89,7 @@ export class StreamManager {
   private lastSeenAudioConfig: ArrayBuffer | null = null;
   private videoConfigSent = false;
   private audioConfigSent = false;
-  private videoBaseTime: number | null = null;
-  private audioBaseTime: number | null = null;
+  private baseTime: number | null = null;
   private lastVideoTimestamp = -1;
   private lastAudioTimestamp = -1;
   private videoChunkCount = 0;
@@ -153,8 +152,8 @@ export class StreamManager {
 
   public handleVideoChunk = (chunk: EncodedVideoChunk, metadata: EncodedVideoChunkMetadata | undefined) => {
     if (this.ws.readyState !== WebSocket.OPEN) return;
-    if (this.videoBaseTime === null) this.videoBaseTime = chunk.timestamp;
-    let timestamp = Math.max(0, Math.floor((chunk.timestamp - this.videoBaseTime) / 1000));
+    if (this.baseTime === null) this.baseTime = chunk.timestamp;
+    let timestamp = Math.max(0, Math.floor((chunk.timestamp - this.baseTime) / 1000));
 
     // Ensure strictly monotonic timestamps
     if (timestamp <= this.lastVideoTimestamp) {
@@ -207,8 +206,8 @@ export class StreamManager {
 
   public handleAudioChunk = (chunk: EncodedAudioChunk, metadata: EncodedAudioChunkMetadata | undefined, settings: MediaTrackSettings) => {
     if (this.ws.readyState !== WebSocket.OPEN) return;
-    if (this.audioBaseTime === null) this.audioBaseTime = chunk.timestamp;
-    let timestamp = Math.max(0, Math.floor((chunk.timestamp - this.audioBaseTime) / 1000));
+    if (this.baseTime === null) this.baseTime = chunk.timestamp;
+    let timestamp = Math.max(0, Math.floor((chunk.timestamp - this.baseTime) / 1000));
 
     // Ensure strictly monotonic timestamps
     if (timestamp <= this.lastAudioTimestamp) {
