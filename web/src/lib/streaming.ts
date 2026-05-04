@@ -89,7 +89,11 @@ export class StreamManager {
   private lastSeenAudioConfig: ArrayBuffer | null = null;
   private videoConfigSent = false;
   private audioConfigSent = false;
-  private baseTime: number | null = null;
+  private sessionStartTime: number;
+  private videoBaseTime: number | null = null;
+  private audioBaseTime: number | null = null;
+  private videoArrivalWallTime: number | null = null;
+  private audioArrivalWallTime: number | null = null;
   private lastVideoTimestamp = -1;
   private lastAudioTimestamp = -1;
   private videoChunkCount = 0;
@@ -108,6 +112,7 @@ export class StreamManager {
     initialVideoConfig?: ArrayBuffer,
     initialAudioConfig?: ArrayBuffer
   ) {
+    this.sessionStartTime = performance.now();
     this.lastSeenVideoConfig = initialVideoConfig || null;
     this.lastSeenAudioConfig = initialAudioConfig || null;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -152,8 +157,12 @@ export class StreamManager {
 
   public handleVideoChunk = (chunk: EncodedVideoChunk, metadata: EncodedVideoChunkMetadata | undefined) => {
     if (this.ws.readyState !== WebSocket.OPEN) return;
-    if (this.baseTime === null) this.baseTime = chunk.timestamp;
-    let timestamp = Math.max(0, Math.floor((chunk.timestamp - this.baseTime) / 1000));
+    if (this.videoBaseTime === null) {
+      this.videoBaseTime = chunk.timestamp;
+      this.videoArrivalWallTime = performance.now();
+    }
+    const chunkWallTime = (chunk.timestamp - this.videoBaseTime) / 1000 + this.videoArrivalWallTime!;
+    let timestamp = Math.max(0, Math.floor(chunkWallTime - this.sessionStartTime));
 
     // Ensure strictly monotonic timestamps
     if (timestamp <= this.lastVideoTimestamp) {
@@ -206,8 +215,12 @@ export class StreamManager {
 
   public handleAudioChunk = (chunk: EncodedAudioChunk, metadata: EncodedAudioChunkMetadata | undefined, settings: MediaTrackSettings) => {
     if (this.ws.readyState !== WebSocket.OPEN) return;
-    if (this.baseTime === null) this.baseTime = chunk.timestamp;
-    let timestamp = Math.max(0, Math.floor((chunk.timestamp - this.baseTime) / 1000));
+    if (this.audioBaseTime === null) {
+      this.audioBaseTime = chunk.timestamp;
+      this.audioArrivalWallTime = performance.now();
+    }
+    const chunkWallTime = (chunk.timestamp - this.audioBaseTime) / 1000 + this.audioArrivalWallTime!;
+    let timestamp = Math.max(0, Math.floor(chunkWallTime - this.sessionStartTime));
 
     // Ensure strictly monotonic timestamps
     if (timestamp <= this.lastAudioTimestamp) {
